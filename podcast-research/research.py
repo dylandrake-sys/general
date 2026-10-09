@@ -46,7 +46,7 @@ def load_env(path):
 def cached(key, fn):
     if key not in _cache:
         _cache[key] = fn()
-        time.sleep(0.4 if key.startswith("sug:") else 0.12)
+        time.sleep(1.0 if key.startswith("sug:") else 0.12)
     return _cache[key]
 
 
@@ -55,7 +55,8 @@ def get_json(url, params=None, headers=None):
         r = session.get(url, params=params, headers=headers, timeout=20)
         # Google autocomplete answers rate limits with 403 as well as 429.
         if r.status_code == 429 or (r.status_code == 403 and "suggestqueries" in url):
-            time.sleep(15 * 2 ** attempt)
+            if attempt < 3:
+                time.sleep(10 * 2 ** attempt)
             continue
         r.raise_for_status()
         return r.json()
@@ -64,23 +65,48 @@ def get_json(url, params=None, headers=None):
 
 # ---------- autocomplete ----------
 
+class Blocked(Exception):
+    pass
+
+
+_blocked = set()
+
+
 def suggest(q, ds=""):
+    """Autocomplete for q. Raises Blocked once Google starts refusing; a re-run fills the gap."""
+    key = f"sug:{ds}:{q}"
+    if key not in _cache and ds in _blocked:
+        raise Blocked
     params = {"client": "firefox", "q": q, "hl": "en", "gl": "us"}
     if ds:
         params["ds"] = ds
-    data = cached(f"sug:{ds}:{q}", lambda: get_json(
-        "https://suggestqueries.google.com/complete/search", params))
+    try:
+        data = cached(key, lambda: get_json(
+            "https://suggestqueries.google.com/complete/search", params))
+    except requests.HTTPError:
+        _blocked.add(ds)
+        raise Blocked
     return [s for s in data[1] if s.lower() != q.lower()]
 
 
 def expand(seed, ds):
-    """Seed + seed a..z, deduped. Breadth of this set is a demand proxy."""
+    """Seed + seed a..z, deduped. Breadth of this set is a demand proxy. None if blocked."""
     found = []
-    for q in [seed] + [f"{seed} {c}" for c in string.ascii_lowercase]:
-        for s in suggest(q, ds):
-            if s not in found:
-                found.append(s)
+    try:
+        for q in [seed] + [f"{seed} {c}" for c in string.ascii_lowercase]:
+            for s in suggest(q, ds):
+                if s not in found:
+                    found.append(s)
+    except Blocked:
+        return None
     return found
+
+
+def safe(fn, *a):
+    try:
+        return fn(*a)
+    except Blocked:
+        return None
 
 
 # ---------- YouTube ----------
@@ -194,15 +220,16 @@ def main():
         for cluster, seeds in clusters.items():
             for seed in seeds:
                 print(f"[{cluster}] {seed}", file=sys.stderr)
-                g_direct, y_direct = suggest(seed), suggest(seed, "yt")
+                g_direct, y_direct = safe(suggest, seed), safe(suggest, seed, "yt")
                 g_all = g_direct if args.no_expand else expand(seed, "")
                 y_all = y_direct if args.no_expand else expand(seed, "yt")
                 # Expansion pulls in noise ("christian dior founder"); keep only on-topic phrases.
-                g_all = [x for x in g_all if is_relevant(seed, x)]
-                y_all = [x for x in y_all if is_relevant(seed, x)]
+                g_all = g_all and [x for x in g_all if is_relevant(seed, x)]
+                y_all = y_all and [x for x in y_all if is_relevant(seed, x)]
+                n = lambda xs: "" if xs is None else len(xs)  # blank = blocked, re-run to fill
                 row = {"cluster": cluster, "seed": seed,
-                       "google_direct": len(g_direct), "youtube_direct": len(y_direct),
-                       "google_expanded": len(g_all), "youtube_expanded": len(y_all)}
+                       "google_direct": n(g_direct), "youtube_direct": n(y_direct),
+                       "google_expanded": n(g_all), "youtube_expanded": n(y_all)}
                 row.update(youtube(seed))
                 row.update(podcastindex(seed))
                 row.update(apple(seed))
