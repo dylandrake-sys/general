@@ -46,15 +46,16 @@ def load_env(path):
 def cached(key, fn):
     if key not in _cache:
         _cache[key] = fn()
-        time.sleep(0.12)
+        time.sleep(0.4 if key.startswith("sug:") else 0.12)
     return _cache[key]
 
 
 def get_json(url, params=None, headers=None):
-    for attempt in range(3):
+    for attempt in range(4):
         r = session.get(url, params=params, headers=headers, timeout=20)
-        if r.status_code == 429:
-            time.sleep(2 ** (attempt + 2))
+        # Google autocomplete answers rate limits with 403 as well as 429.
+        if r.status_code == 429 or (r.status_code == 403 and "suggestqueries" in url):
+            time.sleep(15 * 2 ** attempt)
             continue
         r.raise_for_status()
         return r.json()
