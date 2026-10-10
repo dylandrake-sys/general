@@ -127,7 +127,11 @@ def youtube(seed):
             "part": "statistics,snippet", "id": ",".join(ids), "key": key})["items"]
         return [{"title": v["snippet"]["title"], "published": v["snippet"]["publishedAt"],
                  "views": int(v["statistics"].get("viewCount", 0))} for v in vids]
-    vids = cached(f"ytraw:{seed}", run)
+    try:
+        vids = cached(f"ytraw:{seed}", run)
+    except requests.HTTPError as e:  # quota or rate limit; leave the row blank, a re-run fills it
+        print(f"  youtube skipped: {e.response.status_code}", file=sys.stderr)
+        return {}
 
     # Only count videos whose title actually matches the phrase; YouTube happily
     # returns "founder of Christianity" for "christian founder".
