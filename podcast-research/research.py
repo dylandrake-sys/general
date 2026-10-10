@@ -205,6 +205,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("seeds", nargs="?", default=str(HERE / "seeds.json"))
     ap.add_argument("--env", default=str(HERE / ".env"))
+    ap.add_argument("--name", default="", help="suffix for output files, e.g. round2")
     ap.add_argument("--no-expand", action="store_true", help="skip a..z autocomplete expansion")
     args = ap.parse_args()
 
@@ -241,14 +242,15 @@ def main():
     cols = ["cluster", "seed", "google_direct", "google_expanded", "youtube_direct",
             "youtube_expanded", "yt_relevant", "yt_median_views", "yt_max_views", "yt_recent_share",
             "pi_shows", "pi_active_90d", "apple_shows", "yt_top_titles", "pi_top_shows"]
-    with open(OUT / "keywords.csv", "w", newline="") as f:
+    sfx = f"_{args.name}" if args.name else ""
+    with open(OUT / f"keywords{sfx}.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
         w.writeheader()
         for r in rows:
             w.writerow({**r, "yt_top_titles": " | ".join(r.get("yt_top_titles", [])),
                         "pi_top_shows": " | ".join(r.get("pi_top_shows", []))})
-    (OUT / "keywords.json").write_text(json.dumps(rows, indent=2))
-    (OUT / "suggestions.json").write_text(json.dumps(suggestions, indent=2))
+    (OUT / f"keywords{sfx}.json").write_text(json.dumps(rows, indent=2))
+    (OUT / f"suggestions{sfx}.json").write_text(json.dumps(suggestions, indent=2))
     print(f"wrote {len(rows)} rows to {OUT}", file=sys.stderr)
 
 
