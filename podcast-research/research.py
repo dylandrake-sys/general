@@ -120,7 +120,7 @@ def youtube(seed):
         search = get_json("https://www.googleapis.com/youtube/v3/search", {
             "part": "id", "q": seed, "type": "video", "maxResults": 25,
             "regionCode": "US", "relevanceLanguage": "en", "key": key})
-        ids = [i["id"]["videoId"] for i in search.get("items", [])]
+        ids = [i["id"]["videoId"] for i in search.get("items", []) if "videoId" in i.get("id", {})]
         if not ids:
             return []
         vids = get_json("https://www.googleapis.com/youtube/v3/videos", {
